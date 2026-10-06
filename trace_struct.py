@@ -1,11 +1,9 @@
-struct_name = "interface->endpoint[i].descr"
+struct_name = "message"
 struct = """
-	uint8	length;
-	uint8	descriptor_type;
-	uint8	endpoint_address;
-	uint8	attributes;
-	uint16	max_packet_size;
-	uint8	interval;
+	uint8_t message_type;
+	uint8_t flags;
+	uint8_t sequence_id;
+	uint8_t payload_length;
 """
 
 for line in struct.split('\n'):

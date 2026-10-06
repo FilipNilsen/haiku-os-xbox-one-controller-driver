@@ -28,8 +28,8 @@
 #define GIP_DATA_CLASS_AUDIO            0b01100000
 
 // The rest of the MessageType is the message number
-											  //76543210
-#define GIP_MESSAGE_NUMBER_BITMASK 0b00000000
+								   //76543210
+#define GIP_MESSAGE_NUMBER_BITMASK 0b00011111
 
 usb_module_info *gUsb;
 const char *kDriverName = DRIVER_NAME;
@@ -40,14 +40,30 @@ static usb_support_descriptor sSupportedDevices[1] = {
 
 bool shutting_down = false;
 
-
-
-struct gip_message_header {
+struct __attribute__((__packed__)) gip_message_header {
 	uint8_t message_type;
 	uint8_t flags;
 	uint8_t sequence_id;
 	uint8_t payload_length;
-}
+};
+
+struct __attribute__((__packed__)) gip_hello_device_payload {
+	uint64_t device_id;
+	uint16_t vendor_id;
+	uint16_t product_id;
+	uint16_t firmware_version_major;
+	uint16_t firmware_version_minor;
+	uint16_t firmware_version_build;
+	uint16_t firmvare_revision;
+	uint8_t hardware_version_major;
+	uint8_t hardvare_version_minor;
+	uint8_t rf_protocol_version_major;
+	uint8_t rf_protocol_version_minor;
+	uint8_t security_protocol_version_major;
+	uint8_t security_protocol_version_minor;
+	uint8_t gip_version_minor;
+	uint8_t gip_version_major;
+};
 
 // This causes a crash for the OS when used.
 void
@@ -75,6 +91,17 @@ dump_usb_data(void *cookie, status_t status, void *data, size_t actualLength){
 	if (!shutting_down)
 		gUsb->queue_interrupt(*(usb_pipe *)(cookie), data, 64, dump_usb_data, cookie);
 	return;
+}
+
+void
+get_gip_hello(void *cookie, status_t status, void *data, size_t actualLength){
+	if (status != B_OK)
+		return;
+	struct gip_message_header *message = (struct gip_message_header *)data;
+	TRACE((DRIVER_NAME": message_type: 0x%x\n", message->message_type));
+	TRACE((DRIVER_NAME": flags: 0x%x\n", message->flags));
+	TRACE((DRIVER_NAME": sequence_id: 0x%x\n", message->sequence_id));
+	TRACE((DRIVER_NAME": payload_length: 0x%x\n\n", message->payload_length));
 }
 
 static status_t gipusb_device_added(const usb_device dev, void **cookie) {
@@ -105,7 +132,7 @@ static status_t gipusb_device_added(const usb_device dev, void **cookie) {
 	interfaces->active, interfaces->alt_count, interfaces->alt));
 	
 	const usb_interface_info *interface = interfaces->active;
-	TRACE((DRIVER_NAME": The primary interface has %d endpoints\n", interface->endpoint_count));
+	TRACE((DRIVER_NAME": The primary interface has %d endpoints\n\n", interface->endpoint_count));
 	
 	for (size_t i = 0; i < interface->endpoint_count; i++){
 		TRACE((DRIVER_NAME": Endpoint %d has id 0x%x\n", i, interface->endpoint[i]));
@@ -114,13 +141,14 @@ static status_t gipusb_device_added(const usb_device dev, void **cookie) {
 		TRACE((DRIVER_NAME": endpoint_address: 0x%x\n", interface->endpoint[i].descr->endpoint_address));
 		TRACE((DRIVER_NAME": attributes: 0x%x\n", interface->endpoint[i].descr->attributes));
 		TRACE((DRIVER_NAME": max_packet_size: 0x%x\n", interface->endpoint[i].descr->max_packet_size));
-		TRACE((DRIVER_NAME": interval: 0x%x\n", interface->endpoint[i].descr->interval));
+		TRACE((DRIVER_NAME": interval: 0x%x\n\n", interface->endpoint[i].descr->interval));
 
-		// Uncomment if you love crashing Haiku OS:
-		// uint8_t *data = malloc(64);
-		// size_t *cookie = malloc(sizeof(interface->endpoint[i].handle));
-		// *cookie = interface->endpoint[i].handle;
-		// gUsb->queue_interrupt(interface->endpoint[i].handle, data, 64, dump_usb_data, cookie);
+		if (true){
+			uint8_t *data = malloc(64);
+			size_t *cookie = malloc(sizeof(interface->endpoint[i].handle));
+			*cookie = interface->endpoint[i].handle;
+			gUsb->queue_interrupt(interface->endpoint[i].handle, data, 64, get_gip_hello, cookie);
+		}
 	}
 	return B_OK;
 }
