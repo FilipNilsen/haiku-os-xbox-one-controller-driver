@@ -72,6 +72,37 @@ struct __attribute__((__packed__)) gip_hello_device {
 	uint8_t gip_version_major;
 };
 
+struct __attribute__((__packed__)) gip_input_report {
+	struct gip_message_header header;
+	uint8_t button_lsb;
+	uint8_t button_msb;
+	uint16_t left_trigger;
+	uint16_t right_trigger;
+	uint16_t left_thumbstick_x;
+	uint16_t left_thumbstick_y;
+	uint16_t right_thumbstick_x;
+	uint16_t right_thumbstick_y;
+};
+
+void
+get_gip_message(void *cookie, status_t status, void *data, size_t actualLength);
+
+uint16_t swap_endian(uint16_t in){
+	return (in>>8)|(in<<8);
+}
+
+void
+handle_gip_input(struct gip_input_report* message){
+	TRACE((DRIVER_NAME": button_lsb: 0x%x\n", message->button_lsb));
+	TRACE((DRIVER_NAME": button_msb: 0x%x\n", message->button_msb));
+	TRACE((DRIVER_NAME": left_trigger: %d\n", swap_endian(message->left_trigger)));
+	TRACE((DRIVER_NAME": right_trigger: %d\n", swap_endian(message->right_trigger)));
+	TRACE((DRIVER_NAME": left_thumbstick_x: %d\n", swap_endian(message->left_thumbstick_x)));
+	TRACE((DRIVER_NAME": left_thumbstick_y: %d\n", swap_endian(message->left_thumbstick_y)));
+	TRACE((DRIVER_NAME": right_thumbstick_x: %d\n", swap_endian(message->right_thumbstick_x)));
+	TRACE((DRIVER_NAME": right_thumbstick_y: %d\n\n", swap_endian(message->right_thumbstick_y)));
+}
+
 // This causes a crash for the OS when used.
 void
 dump_usb_data(void *cookie, status_t status, void *data, size_t actualLength){
@@ -98,6 +129,13 @@ dump_usb_data(void *cookie, status_t status, void *data, size_t actualLength){
 	if (!shutting_down)
 		gUsb->queue_interrupt(*(usb_pipe *)(cookie), data, 64, dump_usb_data, cookie);
 	return;
+}
+
+void send_gip_start(){
+	uint8_t *message = malloc(5);
+	uint8_t message_raw[] = {0x05, 0x20, gip_global_sequence_pool++, 1, 0};
+	memcpy(message, &message_raw, 5);
+	gUsb->queue_interrupt(out_pipe, message, 5, get_gip_message, NULL);
 }
 
 void handle_gip_hello(struct gip_message_header *message){
@@ -134,13 +172,13 @@ get_gip_message(void *cookie, status_t status, void *data, size_t actualLength){
 	if (message->message_type == 0x2 && message->flags == 0x20 && message->payload_length == 0x1c){
 		handle_gip_hello(message);
 	}
-}
-
-void send_gip_start(){
-	uint8_t *message = malloc(5);
-	uint8_t message_raw[] = {0x05, 0x20, gip_global_sequence_pool++, 1, 0};
-	memcpy(message, &message_raw, 5);
-	gUsb->queue_interrupt(out_pipe, message, 5, get_gip_message, NULL);
+	
+	else if (message->message_type == 0x20 && message->flags == 0x00 && message->payload_length == 14) {
+		handle_gip_input(message);
+	}
+	
+	memset(data, 0, 64);
+	gUsb->queue_interrupt(in_pipe, data, 64, get_gip_message, cookie);
 }
 
 static status_t gipusb_device_added(const usb_device dev, void **cookie) {
@@ -185,10 +223,11 @@ static status_t gipusb_device_added(const usb_device dev, void **cookie) {
 
 		if ((descriptor->endpoint_address & 0b10000000) == 0b10000000){
 			in_pipe = interface->endpoint[i].handle;
+			// Is this the same data that is passed to the callback function? I should find out.
 			uint8_t *data = malloc(64);
 			size_t *cookie = malloc(sizeof(in_pipe));
 			*cookie = in_pipe;
-			gUsb->queue_interrupt(interface->endpoint[i].handle, data, 64, get_gip_message, cookie);
+			gUsb->queue_interrupt(in_pipe, data, 64, get_gip_message, cookie);
 		}
 		if ((descriptor->endpoint_address & 0b10000000) == 0) {
 			out_pipe = interface->endpoint[i].handle;
