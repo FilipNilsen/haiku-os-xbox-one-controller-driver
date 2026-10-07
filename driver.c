@@ -38,6 +38,12 @@ static usb_support_descriptor sSupportedDevices[1] = {
     { 0, 0, 0, 0x45e, 0x2ea },
 };
 
+uint8_t gip_global_sequence_pool = 1;
+uint8_t gip_sequence_id_for[0xff] = {1};
+usb_pipe in_pipe;
+usb_pipe out_pipe;
+
+
 bool shutting_down = false;
 
 struct __attribute__((__packed__)) gip_message_header {
@@ -111,6 +117,7 @@ void handle_gip_hello(struct gip_message_header *message){
 	TRACE((DRIVER_NAME": security_protocol_version_minor: 0x%x\n", hello->security_protocol_version_minor));
 	TRACE((DRIVER_NAME": gip_version_minor: 0x%x\n", hello->gip_version_minor));
 	TRACE((DRIVER_NAME": gip_version_major: 0x%x\n", hello->gip_version_major));
+	send_gip_start();
 }
 
 void
@@ -127,6 +134,13 @@ get_gip_message(void *cookie, status_t status, void *data, size_t actualLength){
 	if (message->message_type == 0x2 && message->flags == 0x20 && message->payload_length == 0x1c){
 		handle_gip_hello(message);
 	}
+}
+
+void send_gip_start(){
+	uint8_t *message = malloc(5);
+	uint8_t message_raw[] = {0x05, 0x20, gip_global_sequence_pool++, 1, 0};
+	memcpy(message, &message_raw, 5);
+	gUsb->queue_interrupt(out_pipe, message, 5, get_gip_message, NULL);
 }
 
 static status_t gipusb_device_added(const usb_device dev, void **cookie) {
@@ -161,6 +175,7 @@ static status_t gipusb_device_added(const usb_device dev, void **cookie) {
 	
 	for (size_t i = 0; i < interface->endpoint_count; i++){
 		TRACE((DRIVER_NAME": Endpoint %d has id 0x%x\n", i, interface->endpoint[i]));
+		usb_endpoint_descriptor *descriptor = interface->endpoint[i].descr;
 		TRACE((DRIVER_NAME": length: 0x%x\n", interface->endpoint[i].descr->length));
 		TRACE((DRIVER_NAME": descriptor_type: 0x%x\n", interface->endpoint[i].descr->descriptor_type));
 		TRACE((DRIVER_NAME": endpoint_address: 0x%x\n", interface->endpoint[i].descr->endpoint_address));
@@ -168,11 +183,15 @@ static status_t gipusb_device_added(const usb_device dev, void **cookie) {
 		TRACE((DRIVER_NAME": max_packet_size: 0x%x\n", interface->endpoint[i].descr->max_packet_size));
 		TRACE((DRIVER_NAME": interval: 0x%x\n\n", interface->endpoint[i].descr->interval));
 
-		if (true){
+		if ((descriptor->endpoint_address & 0b10000000) == 0b10000000){
+			in_pipe = interface->endpoint[i].handle;
 			uint8_t *data = malloc(64);
-			size_t *cookie = malloc(sizeof(interface->endpoint[i].handle));
-			*cookie = interface->endpoint[i].handle;
+			size_t *cookie = malloc(sizeof(in_pipe));
+			*cookie = in_pipe;
 			gUsb->queue_interrupt(interface->endpoint[i].handle, data, 64, get_gip_message, cookie);
+		}
+		if ((descriptor->endpoint_address & 0b10000000) == 0) {
+			out_pipe = interface->endpoint[i].handle;
 		}
 	}
 	return B_OK;
