@@ -47,7 +47,8 @@ struct __attribute__((__packed__)) gip_message_header {
 	uint8_t payload_length;
 };
 
-struct __attribute__((__packed__)) gip_hello_device_payload {
+struct __attribute__((__packed__)) gip_hello_device {
+	struct gip_message_header header;
 	uint64_t device_id;
 	uint16_t vendor_id;
 	uint16_t product_id;
@@ -93,15 +94,39 @@ dump_usb_data(void *cookie, status_t status, void *data, size_t actualLength){
 	return;
 }
 
+void handle_gip_hello(struct gip_message_header *message){
+	struct gip_hello_device *hello = (struct gip_hello_device *)(message);
+	TRACE((DRIVER_NAME": device_id: 0x%x\n", hello->device_id));
+	TRACE((DRIVER_NAME": vendor_id: 0x%x\n", hello->vendor_id));
+	TRACE((DRIVER_NAME": product_id: 0x%x\n", hello->product_id));
+	TRACE((DRIVER_NAME": firmware_version_major: 0x%x\n", hello->firmware_version_major));
+	TRACE((DRIVER_NAME": firmware_version_minor: 0x%x\n", hello->firmware_version_minor));
+	TRACE((DRIVER_NAME": firmware_version_build: 0x%x\n", hello->firmware_version_build));
+	TRACE((DRIVER_NAME": firmvare_revision: 0x%x\n", hello->firmvare_revision));
+	TRACE((DRIVER_NAME": hardware_version_major: 0x%x\n", hello->hardware_version_major));
+	TRACE((DRIVER_NAME": hardvare_version_minor: 0x%x\n", hello->hardvare_version_minor));
+	TRACE((DRIVER_NAME": rf_protocol_version_major: 0x%x\n", hello->rf_protocol_version_major));
+	TRACE((DRIVER_NAME": rf_protocol_version_minor: 0x%x\n", hello->rf_protocol_version_minor));
+	TRACE((DRIVER_NAME": security_protocol_version_major: 0x%x\n", hello->security_protocol_version_major));
+	TRACE((DRIVER_NAME": security_protocol_version_minor: 0x%x\n", hello->security_protocol_version_minor));
+	TRACE((DRIVER_NAME": gip_version_minor: 0x%x\n", hello->gip_version_minor));
+	TRACE((DRIVER_NAME": gip_version_major: 0x%x\n", hello->gip_version_major));
+}
+
 void
-get_gip_hello(void *cookie, status_t status, void *data, size_t actualLength){
+get_gip_message(void *cookie, status_t status, void *data, size_t actualLength){
 	if (status != B_OK)
 		return;
 	struct gip_message_header *message = (struct gip_message_header *)data;
+	// TRACE((DRIVER_NAME": %p\n", message));
 	TRACE((DRIVER_NAME": message_type: 0x%x\n", message->message_type));
 	TRACE((DRIVER_NAME": flags: 0x%x\n", message->flags));
 	TRACE((DRIVER_NAME": sequence_id: 0x%x\n", message->sequence_id));
 	TRACE((DRIVER_NAME": payload_length: 0x%x\n\n", message->payload_length));
+	
+	if (message->message_type == 0x2 && message->flags == 0x20 && message->payload_length == 0x1c){
+		handle_gip_hello(message);
+	}
 }
 
 static status_t gipusb_device_added(const usb_device dev, void **cookie) {
@@ -147,7 +172,7 @@ static status_t gipusb_device_added(const usb_device dev, void **cookie) {
 			uint8_t *data = malloc(64);
 			size_t *cookie = malloc(sizeof(interface->endpoint[i].handle));
 			*cookie = interface->endpoint[i].handle;
-			gUsb->queue_interrupt(interface->endpoint[i].handle, data, 64, get_gip_hello, cookie);
+			gUsb->queue_interrupt(interface->endpoint[i].handle, data, 64, get_gip_message, cookie);
 		}
 	}
 	return B_OK;
