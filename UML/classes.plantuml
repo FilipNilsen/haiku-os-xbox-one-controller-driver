@@ -1,0 +1,82 @@
+@startuml
+' GIP messages:
++ class gip_header <<structure>> {
+	+ message_type:uint8_t
+	+ flags:uint8_t
+	+ sequence_id:uint8_t
+	+ payload_length:uint8_t
+}
+
++ class gip_hello_device <<structure>> {
+	+ device_id:uint64_t
+	+ vendor_it:uint16_t
+	+ product_id:uint16_t
+	+ firmvare_version_major:uint16_t
+	+ firmvare_version_minor:uint16_t
+	+ firmvare_version_build:uint16_t
+	+ firmvare_version_revision:uint16_t
+	+ hardware_version:uint16_t
+	+ rf_protocol_version_major:uint8_t
+	+ rf_protocol_version_minor:uint8_t
+	+ security_protocol_version_major:uint8_t
+	+ security_protocol_version_minor:uint8_t
+	+ gip_version_major:uint8_t
+	+ gip_version_minor:uint8_t
+}
+gip_hello_device --> "1	+header" gip_header
+
++ class gip_input_report <<structure>> {
+	+ digital_buttons_lsb:uint8_t
+	+ digital_buttons_msb:uint8_t
+	+ left_trigger:uint16_t
+	+ right_trigger:uint16_t
+	+ left_thumbstick_x:uint16_t
+	+ left_thumbstick_y:uint16_t
+	+ right_thumbstick_x:uint16_t
+	+ right_thumbstick_x:uint16_t
+}
+gip_input_report --> "1	+header" gip_header
+
+' Haiku OS USBKit:
+class BUSBRoster {
+	+ BUSBRoster()
+	+ ~BUSBRoster()
+	+ {abstract} DeviceAdded(device:BUSBDevice):status_t
+	+ {abstract} DeviceRemoved(device:USBDevice)
+	+ Start()
+	+ Stop()
+}
+
+class BUSBDevice {
+	+ ActiveConfiguration():BUSBConfiguration
+}
+BUSBRoster ..> BUSBDevice
+
+class BUSBConfiguration {
+	+ CountInterfaces():uint32_t
+	+ InterfaceAt(index:uint32_t):BUSBInterface
+}
+BUSBDevice ..> BUSBConfiguration
+class BUSBInterface {
+	+ CountEndpoints():uint32_t
+	+ EndpointAt(index:uint32_t):BUSBEndpoint
+}
+BUSBConfiguration ..> BUSBInterface
+
+class BUSBEndpoint {
+	+ InterruptTransfer(data, length:size_t):ssize_t
+}
+BUSBInterface ..> BUSBEndpoint
+
+' Driver:
+class GIPRoster
+GIPRoster --|> BUSBRoster
+
+class XboxController  {
+	+ GetDataFromController()
+	- _gip_global_sequence:uint8_t = 1
+	- _gip_sequence_for_message:uint8_t[255] = 1
+}
+XboxController --|>BUSBDevice
+GIPRoster ..> XboxController
+@enduml
